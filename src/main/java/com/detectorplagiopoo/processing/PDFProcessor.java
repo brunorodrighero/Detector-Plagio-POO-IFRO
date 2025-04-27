@@ -1,4 +1,4 @@
-package com.detectorplagiopoo.processing;
+/*package com.detectorplagiopoo.processing;
 import com.detectorplagiopoo.model.PDFInfo;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDDocumentInformation;
@@ -33,3 +33,4 @@ public class PDFProcessor {
         return infos;
     }
 }
+*/

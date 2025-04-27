@@ -1,7 +1,7 @@
 package com.detectorplagiopoo.gui;
 
 import com.detectorplagiopoo.config.AppConfig;
-import com.detectorplagiopoo.model.PDFInfo;
+import com.detectorplagiopoo.model.TextInfo;
 import com.detectorplagiopoo.model.PlagiarismResult;
 import com.detectorplagiopoo.model.SimilarityMetric;
 import com.detectorplagiopoo.processing.*;
@@ -12,10 +12,9 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Logger;
+import java.util.Objects;
 
 public class PlagiarismDetectorFrame extends JFrame {
     private final AppConfig config = new AppConfig();
@@ -25,7 +24,11 @@ public class PlagiarismDetectorFrame extends JFrame {
     private final JTextArea resultArea;
     private final JButton startButton;
     private final JComboBox<Integer> ngramBox;
-    private final Map<String, JCheckBox> metricChecks = new LinkedHashMap<>();
+    private final JComboBox<String> metricCombo;
+    private final Map<String, Double> defaultThresholds = Map.of(
+            "Jaccard", 0.04,  // 4%
+            "Dice", 0.10      // 10%
+    );
 
     public PlagiarismDetectorFrame() {
         super();
@@ -40,12 +43,15 @@ public class PlagiarismDetectorFrame extends JFrame {
         gbc.insets = new Insets(4, 4, 4, 4);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        gbc.gridx = 0; gbc.gridy = 0;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
         ctrl.add(new JLabel("Pasta para análise:"), gbc);
-        gbc.gridx = 1; gbc.weightx = 1;
+        gbc.gridx = 1;
+        gbc.weightx = 1;
         folderField = new JTextField(20);
         ctrl.add(folderField, gbc);
-        gbc.gridx = 2; gbc.weightx = 0;
+        gbc.gridx = 2;
+        gbc.weightx = 0;
         JButton btnFolder = new JButton("Selecionar Pasta");
         btnFolder.addActionListener(e -> {
             JFileChooser fc = new JFileChooser();
@@ -55,12 +61,15 @@ public class PlagiarismDetectorFrame extends JFrame {
         });
         ctrl.add(btnFolder, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 1;
+        gbc.gridx = 0;
+        gbc.gridy = 1;
         ctrl.add(new JLabel("Salvar relatório em:"), gbc);
-        gbc.gridx = 1; gbc.weightx = 1;
+        gbc.gridx = 1;
+        gbc.weightx = 1;
         reportField = new JTextField(System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "RelatorioPlagio.txt", 20);
         ctrl.add(reportField, gbc);
-        gbc.gridx = 2; gbc.weightx = 0;
+        gbc.gridx = 2;
+        gbc.weightx = 0;
         JButton btnReport = new JButton("Selecionar Local");
         btnReport.addActionListener(e -> {
             JFileChooser fc = new JFileChooser();
@@ -70,13 +79,16 @@ public class PlagiarismDetectorFrame extends JFrame {
         });
         ctrl.add(btnReport, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 2;
+        gbc.gridx = 0;
+        gbc.gridy = 2;
         ctrl.add(new JLabel("Limiar de similaridade (%):"), gbc);
-        gbc.gridx = 1; gbc.weightx = 0;
-        thresholdField = new JTextField(String.valueOf(config.getSimilarityThreshold() * 100), 5);
+        gbc.gridx = 1;
+        gbc.weightx = 0;
+        thresholdField = new JTextField(5);
         ctrl.add(thresholdField, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 3;
+        gbc.gridx = 0;
+        gbc.gridy = 3;
         ctrl.add(new JLabel("Tamanho do n-grama:"), gbc);
         gbc.gridx = 1;
         ngramBox = new JComboBox<>(new Integer[]{3, 5, 7, 10});
@@ -84,20 +96,28 @@ public class PlagiarismDetectorFrame extends JFrame {
         ngramBox.addActionListener(e -> config.setNGramSize((Integer) ngramBox.getSelectedItem()));
         ctrl.add(ngramBox, gbc);
 
-        // Métricas de similaridade
-        List<SimilarityMetric> mets = List.of(new JaccardMetric(), new CosineMetric(), new LevenshteinMetric());
-        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 3;
-        ctrl.add(new JLabel("Métricas:"), gbc);
-        gbc.gridwidth = 1;
-        for (int i = 0; i < mets.size(); i++) {
-            SimilarityMetric m = mets.get(i);
-            JCheckBox cb = new JCheckBox(m.getName(), true);
-            metricChecks.put(m.getName(), cb);
-            gbc.gridx = i; gbc.gridy = 5;
-            ctrl.add(cb, gbc);
-        }
+        gbc.gridx = 0;
+        gbc.gridy = 4;
+        ctrl.add(new JLabel("Métrica de similaridade:"), gbc);
+        gbc.gridx = 1;
+        String[] metrics = {"Jaccard", "Dice"};
+        metricCombo = new JComboBox<>(metrics);
+        metricCombo.setSelectedItem("Jaccard");
+        metricCombo.addActionListener(e -> {
+            String selectedMetric = (String) metricCombo.getSelectedItem();
+            double defaultThr = defaultThresholds.get(selectedMetric);
+            thresholdField.setText(String.valueOf(defaultThr * 100));
+        });
+        ctrl.add(metricCombo, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 3;
+        // Definir o limiar inicial com base na métrica padrão "Jaccard"
+        String initialMetric = (String) metricCombo.getSelectedItem();
+        double initialThr = defaultThresholds.get(initialMetric);
+        thresholdField.setText(String.valueOf(initialThr * 100));
+
+        gbc.gridx = 0;
+        gbc.gridy = 5;
+        gbc.gridwidth = 3;
         startButton = new JButton("Iniciar Análise");
         startButton.addActionListener(e -> startAnalysis());
         ctrl.add(startButton, gbc);
@@ -107,7 +127,6 @@ public class PlagiarismDetectorFrame extends JFrame {
         resultArea.setEditable(false);
         add(new JScrollPane(resultArea), BorderLayout.CENTER);
         setVisible(true);
-        Logger.getLogger("org.apache.pdfbox").setLevel(java.util.logging.Level.SEVERE);
     }
 
     private void startAnalysis() {
@@ -117,8 +136,10 @@ public class PlagiarismDetectorFrame extends JFrame {
             thr = Double.parseDouble(thresholdField.getText()) / 100;
             if (thr < 0 || thr > 1) throw new NumberFormatException();
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Valor inválido; usando 4%", "Erro", JOptionPane.ERROR_MESSAGE);
-            thr = config.getSimilarityThreshold();
+            String selectedMetric = (String) metricCombo.getSelectedItem();
+            double defaultThr = defaultThresholds.get(selectedMetric);
+            JOptionPane.showMessageDialog(this, "Valor inválido; usando " + (defaultThr * 100) + "%", "Erro", JOptionPane.ERROR_MESSAGE);
+            thr = defaultThr;
             thresholdField.setText(String.valueOf(thr * 100));
         }
         File folder = new File(folderField.getText());
@@ -136,30 +157,37 @@ public class PlagiarismDetectorFrame extends JFrame {
 
         double finalThr = thr;
         new SwingWorker<Void, String>() {
+            private boolean reportGenerated = false;
+
             @Override
             protected Void doInBackground() throws Exception {
-                PDFProcessor proc = new PDFProcessor(new BreakIteratorTokenizer(), new NGramGenerator(config.getNGramSize()));
-                List<PDFInfo> infos = proc.processFolder(folder);
+                TextProcessor proc = new TextProcessor(new BreakIteratorTokenizer(), new NGramGenerator(config.getNGramSize()));
+                List<TextInfo> infos = proc.processFolder(folder);
                 if (infos.isEmpty()) {
-                    publish("Nenhum arquivo PDF encontrado na pasta ou subpastas.");
+                    publish("Nenhum arquivo de texto encontrado na pasta ou subpastas.");
                     return null;
                 }
                 List<SimilarityMetric> sel = new ArrayList<>();
-                for (SimilarityMetric m : List.of(new JaccardMetric(), new CosineMetric(), new LevenshteinMetric())) {
-                    if (metricChecks.get(m.getName()).isSelected()) sel.add(m);
+                String selectedMetric = (String) metricCombo.getSelectedItem();
+                switch (Objects.requireNonNull(selectedMetric)) {
+                    case "Jaccard":
+                        sel.add(new JaccardMetric());
+                        break;
+                    case "Dice":
+                        sel.add(new DiceMetric());
+                        break;
                 }
                 if (sel.isEmpty()) {
-                    publish("Nenhuma métrica selecionada. Selecione pelo menos uma métrica para prosseguir.");
+                    publish("Nenhuma métrica selecionada.");
                     return null;
                 }
                 PlagiarismAnalyzer an = new PlagiarismAnalyzer(sel, finalThr);
                 List<PlagiarismResult> res = an.analyze(infos);
 
-                // Gerar relatório
                 try (FileWriter w = new FileWriter(rpt)) {
                     w.write("Relatório de Plágio\n===================\n\n");
                     w.write("Arquivos processados:\n");
-                    for (PDFInfo p : infos) {
+                    for (TextInfo p : infos) {
                         w.write("- " + p.getFileName() + " (Caminho: " + p.getFilePath() + ")\n");
                     }
                     w.write("\n");
@@ -170,10 +198,8 @@ public class PlagiarismDetectorFrame extends JFrame {
                         if (r.hasPlagiarism()) {
                             plagiarismFound = true;
                             w.write("Possível plágio detectado:\n");
-                            w.write("Arquivo 1: " + r.getPdf1().getFileName() + " (Caminho: " + r.getPdf1().getFilePath() + ")\n");
-                            w.write("Autor: " + r.getPdf1().getAuthor() + ", Título: " + r.getPdf1().getTitle() + "\n");
-                            w.write("Arquivo 2: " + r.getPdf2().getFileName() + " (Caminho: " + r.getPdf2().getFilePath() + ")\n");
-                            w.write("Autor: " + r.getPdf2().getAuthor() + ", Título: " + r.getPdf2().getTitle() + "\n");
+                            w.write("Arquivo 1: " + r.getText1().getFileName() + " (Caminho: " + r.getText1().getFilePath() + ")\n");
+                            w.write("Arquivo 2: " + r.getText2().getFileName() + " (Caminho: " + r.getText2().getFilePath() + ")\n");
                             w.write("Similaridades:\n");
                             for (Map.Entry<String, Double> entry : r.getSimilarities().entrySet()) {
                                 if (entry.getValue() >= finalThr) {
@@ -195,9 +221,8 @@ public class PlagiarismDetectorFrame extends JFrame {
                             }
                             w.write("----------------------------------------\n\n");
 
-                            // Exibir no sistema
                             StringBuilder summary = new StringBuilder();
-                            summary.append(String.format("Plágio detectado entre %s e %s:\n", r.getPdf1().getFileName(), r.getPdf2().getFileName()));
+                            summary.append(String.format("Plágio detectado entre %s e %s:\n", r.getText1().getFileName(), r.getText2().getFileName()));
                             for (Map.Entry<String, Double> entry : r.getSimilarities().entrySet()) {
                                 if (entry.getValue() >= finalThr) {
                                     summary.append(String.format("- %s: %.2f%%\n", entry.getKey(), entry.getValue() * 100));
@@ -205,7 +230,7 @@ public class PlagiarismDetectorFrame extends JFrame {
                             }
                             publish(summary.toString());
                         } else {
-                            w.write(String.format("Nenhum plágio detectado entre %s e %s:\n", r.getPdf1().getFileName(), r.getPdf2().getFileName()));
+                            w.write(String.format("Nenhum plágio detectado entre %s e %s:\n", r.getText1().getFileName(), r.getText2().getFileName()));
                             for (Map.Entry<String, Double> entry : r.getSimilarities().entrySet()) {
                                 w.write(String.format("- %s: %.2f%%\n", entry.getKey(), entry.getValue() * 100));
                             }
@@ -217,6 +242,7 @@ public class PlagiarismDetectorFrame extends JFrame {
                         w.write("Nenhum caso de plágio foi detectado.\n");
                         publish("Nenhum caso de plágio foi detectado.");
                     }
+                    reportGenerated = true;
                 }
                 return null;
             }
@@ -228,9 +254,13 @@ public class PlagiarismDetectorFrame extends JFrame {
 
             @Override
             protected void done() {
-                try {
-                    Desktop.getDesktop().open(rpt);
-                } catch (IOException ignored) {}
+                if (reportGenerated) {
+                    try {
+                        Desktop.getDesktop().open(rpt);
+                    } catch (IOException e) {
+                        resultArea.append("Erro ao abrir o relatório: " + e.getMessage() + "\n");
+                    }
+                }
                 startButton.setEnabled(true);
             }
         }.execute();

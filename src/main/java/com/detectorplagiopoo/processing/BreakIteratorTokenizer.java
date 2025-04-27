@@ -1,4 +1,5 @@
 package com.detectorplagiopoo.processing;
+
 import java.text.BreakIterator;
 import java.util.ArrayList;
 import java.util.List;
@@ -8,8 +9,9 @@ public class BreakIteratorTokenizer implements Tokenizer {
     private final BreakIterator iterator;
 
     public BreakIteratorTokenizer() {
-        this.iterator = BreakIterator.getWordInstance(new Locale("pt", "BR")); // Fixado em pt_BR
+        this.iterator = BreakIterator.getWordInstance(Locale.getDefault());
     }
+
     @Override
     public List<String> tokenize(String text) {
         List<String> tokens = new ArrayList<>();

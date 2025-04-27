@@ -1,15 +1,19 @@
 package com.detectorplagiopoo.processing;
+
 import java.io.File;
 import java.util.List;
 
 public class FileScanner {
-    public static void collectPDFFiles(File directory, List<File> pdfFiles) {
+    public static void collectFiles(File directory, List<File> files) {
         if (!directory.isDirectory()) return;
-        File[] files = directory.listFiles();
-        if (files == null) return;
-        for (File f : files) {
-            if (f.isDirectory()) collectPDFFiles(f, pdfFiles);
-            else if (f.getName().toLowerCase().endsWith(".pdf")) pdfFiles.add(f);
+        File[] fileArray = directory.listFiles();
+        if (fileArray == null) return;
+        for (File f : fileArray) {
+            if (f.isDirectory()) {
+                collectFiles(f, files);
+            } else if (f.getName().toLowerCase().matches(".*\\.(pdf|txt|doc|docx|rtf|md|html|csv|java|py|cpp|c|js|ts|json|xml|yaml|yml)$")) {
+                files.add(f);
+            }
         }
     }
 }

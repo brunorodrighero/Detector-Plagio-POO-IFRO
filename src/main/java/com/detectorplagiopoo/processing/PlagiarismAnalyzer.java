@@ -2,6 +2,7 @@ package com.detectorplagiopoo.processing;
 
 import com.detectorplagiopoo.model.PlagiarismResult;
 import com.detectorplagiopoo.model.SimilarityMetric;
+import com.detectorplagiopoo.model.TextInfo;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,11 +17,11 @@ public class PlagiarismAnalyzer {
         this.threshold = threshold;
     }
 
-    public List<PlagiarismResult> analyze(List<com.detectorplagiopoo.model.PDFInfo> pdfs) throws InterruptedException {
+    public List<PlagiarismResult> analyze(List<TextInfo> texts) throws InterruptedException {
         List<Callable<PlagiarismResult>> tasks = new ArrayList<>();
-        for (int i = 0; i < pdfs.size(); i++) {
-            for (int j = i + 1; j < pdfs.size(); j++) {
-                tasks.add(new PlagiarismTask(pdfs.get(i), pdfs.get(j), metrics, threshold));
+        for (int i = 0; i < texts.size(); i++) {
+            for (int j = i + 1; j < texts.size(); j++) {
+                tasks.add(new PlagiarismTask(texts.get(i), texts.get(j), metrics, threshold));
             }
         }
         ExecutorService exec = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
@@ -30,7 +31,8 @@ public class PlagiarismAnalyzer {
         for (Future<PlagiarismResult> f : futs) {
             try {
                 results.add(f.get());
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
         return results;
     }
