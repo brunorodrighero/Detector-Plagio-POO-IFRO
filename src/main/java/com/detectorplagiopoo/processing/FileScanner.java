@@ -11,7 +11,7 @@ public class FileScanner {
         for (File f : fileArray) {
             if (f.isDirectory()) {
                 collectFiles(f, files);
-            } else if (f.getName().toLowerCase().matches(".*\\.(pdf|txt|doc|docx|rtf|md|html|csv|java|py|cpp|c|js|ts|json|xml|yaml|yml)$")) {
+            } else if (f.getName().toLowerCase().matches(".*\\.(pdf|txt|docx|rtf|odt|md|html|csv|java|py|cpp|c|js|ts|json|xml|yaml|yml)$")) {
                 files.add(f);
             }
         }

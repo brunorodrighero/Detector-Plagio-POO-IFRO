@@ -11,10 +11,11 @@ import java.awt.*;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.*;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 public class PlagiarismDetectorFrame extends JFrame {
     private final AppConfig config = new AppConfig();
@@ -23,12 +24,21 @@ public class PlagiarismDetectorFrame extends JFrame {
     private final JTextField thresholdField;
     private final JTextArea resultArea;
     private final JButton startButton;
+    private final JButton cancelButton;
+    private final JProgressBar progressBar;
     private final JComboBox<Integer> ngramBox;
     private final JComboBox<String> metricCombo;
     private final Map<String, Double> defaultThresholds = Map.of(
             "Jaccard", 0.04,  // 4%
             "Dice", 0.10      // 10%
     );
+    private ExecutorService executor;
+    // Lista de palavras-chave comuns em páginas de capa (em minúsculas)
+    private final Set<String> coverPageKeywords = new HashSet<>(Arrays.asList(
+            "instituto", "federal", "educação", "ciência", "tecnologia", "rondônia",
+            "campus", "ariquemes", "trabalho", "apresentado", "disciplina", "análise",
+            "desenvolvimento", "sistemas", "ifro", "sumário", "introdução"
+    ));
 
     public PlagiarismDetectorFrame() {
         super();
@@ -37,6 +47,12 @@ public class PlagiarismDetectorFrame extends JFrame {
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
+
+        // Inicializar resultArea e progressBar no início do construtor
+        resultArea = new JTextArea();
+        resultArea.setEditable(false);
+        progressBar = new JProgressBar(0, 100);
+        progressBar.setStringPainted(true);
 
         JPanel ctrl = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
@@ -117,14 +133,32 @@ public class PlagiarismDetectorFrame extends JFrame {
 
         gbc.gridx = 0;
         gbc.gridy = 5;
-        gbc.gridwidth = 3;
+        gbc.gridwidth = 1;
         startButton = new JButton("Iniciar Análise");
         startButton.addActionListener(e -> startAnalysis());
         ctrl.add(startButton, gbc);
 
+        gbc.gridx = 1;
+        gbc.gridy = 5;
+        cancelButton = new JButton("Cancelar");
+        cancelButton.setEnabled(false);
+        cancelButton.addActionListener(e -> {
+            if (executor != null) {
+                executor.shutdownNow();
+                resultArea.append("Análise cancelada.\n");
+                startButton.setEnabled(true);
+                cancelButton.setEnabled(false);
+                progressBar.setValue(0);
+            }
+        });
+        ctrl.add(cancelButton, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 6;
+        gbc.gridwidth = 3;
+        ctrl.add(progressBar, gbc);
+
         add(ctrl, BorderLayout.NORTH);
-        resultArea = new JTextArea();
-        resultArea.setEditable(false);
         add(new JScrollPane(resultArea), BorderLayout.CENTER);
         setVisible(true);
     }
@@ -153,7 +187,9 @@ public class PlagiarismDetectorFrame extends JFrame {
             return;
         }
         startButton.setEnabled(false);
+        cancelButton.setEnabled(true);
         resultArea.append("Iniciando análise...\n");
+        progressBar.setValue(0);
 
         double finalThr = thr;
         new SwingWorker<Void, String>() {
@@ -167,6 +203,8 @@ public class PlagiarismDetectorFrame extends JFrame {
                     publish("Nenhum arquivo de texto encontrado na pasta ou subpastas.");
                     return null;
                 }
+                publish("Progress:10"); // 10% após processar arquivos
+
                 List<SimilarityMetric> sel = new ArrayList<>();
                 String selectedMetric = (String) metricCombo.getSelectedItem();
                 switch (Objects.requireNonNull(selectedMetric)) {
@@ -181,8 +219,13 @@ public class PlagiarismDetectorFrame extends JFrame {
                     publish("Nenhuma métrica selecionada.");
                     return null;
                 }
+                publish("Progress:20"); // 20% após selecionar métricas
+
+                executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
                 PlagiarismAnalyzer an = new PlagiarismAnalyzer(sel, finalThr);
                 List<PlagiarismResult> res = an.analyze(infos);
+                int totalComparisons = res.size();
+                int completed = 0;
 
                 try (FileWriter w = new FileWriter(rpt)) {
                     w.write("Relatório de Plágio\n===================\n\n");
@@ -195,39 +238,70 @@ public class PlagiarismDetectorFrame extends JFrame {
                     w.write("Resultados de Comparação:\n");
                     boolean plagiarismFound = false;
                     for (PlagiarismResult r : res) {
+                        completed++;
+                        int progress = (int) ((completed / (double) totalComparisons) * 80) + 20; // Escala até 100%
+                        publish("Progress:" + progress);
+
                         if (r.hasPlagiarism()) {
+                            // Filtrar trechos que contêm qualquer palavra-chave
+                            List<Map.Entry<String, Double>> significantSimilarities = new ArrayList<>();
+                            Map<String, List<String>> significantExcerpts = new HashMap<>();
+
+                            for (Map.Entry<String, Double> entry : r.getSimilarities().entrySet()) {
+                                if (entry.getValue() >= finalThr) {
+                                    List<String> excerpts = r.getExcerpts().get(entry.getKey());
+                                    List<String> filteredExcerpts = new ArrayList<>();
+
+                                    for (String excerpt : excerpts) {
+                                        String excerptLower = excerpt.toLowerCase();
+                                        List<String> words = Arrays.stream(excerptLower.split("\\W+"))
+                                                .filter(word -> !word.isEmpty())
+                                                .collect(Collectors.toList());
+                                        // Ignorar o trecho se contiver pelo menos uma palavra-chave
+                                        boolean containsKeyword = words.stream().anyMatch(coverPageKeywords::contains);
+                                        if (!containsKeyword) {
+                                            filteredExcerpts.add(excerpt);
+                                        }
+                                    }
+
+                                    if (!filteredExcerpts.isEmpty()) {
+                                        significantSimilarities.add(entry);
+                                        significantExcerpts.put(entry.getKey(), filteredExcerpts);
+                                    }
+                                }
+                            }
+
+                            // Se não há similaridades significativas após filtragem, ignorar este caso
+                            if (significantSimilarities.isEmpty()) {
+                                continue;
+                            }
+
                             plagiarismFound = true;
                             w.write("Possível plágio detectado:\n");
                             w.write("Arquivo 1: " + r.getText1().getFileName() + " (Caminho: " + r.getText1().getFilePath() + ")\n");
                             w.write("Arquivo 2: " + r.getText2().getFileName() + " (Caminho: " + r.getText2().getFilePath() + ")\n");
                             w.write("Similaridades:\n");
-                            for (Map.Entry<String, Double> entry : r.getSimilarities().entrySet()) {
-                                if (entry.getValue() >= finalThr) {
-                                    w.write(String.format("- %s: %.2f%%\n", entry.getKey(), entry.getValue() * 100));
-                                    List<String> excerpts = r.getExcerpts().get(entry.getKey());
-                                    if (!excerpts.isEmpty()) {
-                                        w.write("Trechos copiados (segundo " + entry.getKey() + "):\n");
-                                        int displayedExcerpts = 0;
-                                        for (String excerpt : excerpts) {
-                                            if (displayedExcerpts >= 3) {
-                                                w.write("(... mais trechos idênticos encontrados)\n");
-                                                break;
-                                            }
-                                            w.write("- " + excerpt + "\n");
-                                            displayedExcerpts++;
+                            StringBuilder summary = new StringBuilder();
+                            summary.append(String.format("Plágio detectado entre %s e %s:\n", r.getText1().getFileName(), r.getText2().getFileName()));
+                            for (Map.Entry<String, Double> entry : significantSimilarities) {
+                                w.write(String.format("- %s: %.2f%%\n", entry.getKey(), entry.getValue() * 100));
+                                summary.append(String.format("- %s: %.2f%%\n", entry.getKey(), entry.getValue() * 100));
+                                List<String> excerpts = significantExcerpts.get(entry.getKey());
+                                if (!excerpts.isEmpty()) {
+                                    w.write("Trechos copiados (segundo " + entry.getKey() + "):\n");
+                                    int displayedExcerpts = 0;
+                                    for (String excerpt : excerpts) {
+                                        if (displayedExcerpts >= 3) {
+                                            w.write("(... mais trechos idênticos encontrados)\n");
+                                            break;
                                         }
+                                        w.write("- " + excerpt + "\n");
+                                        displayedExcerpts++;
                                     }
                                 }
                             }
                             w.write("----------------------------------------\n\n");
-
-                            StringBuilder summary = new StringBuilder();
-                            summary.append(String.format("Plágio detectado entre %s e %s:\n", r.getText1().getFileName(), r.getText2().getFileName()));
-                            for (Map.Entry<String, Double> entry : r.getSimilarities().entrySet()) {
-                                if (entry.getValue() >= finalThr) {
-                                    summary.append(String.format("- %s: %.2f%%\n", entry.getKey(), entry.getValue() * 100));
-                                }
-                            }
+                            // Publicar apenas o resumo na GUI, sem trechos
                             publish(summary.toString());
                         } else {
                             w.write(String.format("Nenhum plágio detectado entre %s e %s:\n", r.getText1().getFileName(), r.getText2().getFileName()));
@@ -249,7 +323,14 @@ public class PlagiarismDetectorFrame extends JFrame {
 
             @Override
             protected void process(List<String> chunks) {
-                for (String s : chunks) resultArea.append(s + "\n");
+                for (String s : chunks) {
+                    if (s.startsWith("Progress:")) {
+                        int progress = Integer.parseInt(s.split(":")[1]);
+                        progressBar.setValue(progress);
+                    } else {
+                        resultArea.append(s + "\n");
+                    }
+                }
             }
 
             @Override
@@ -262,6 +343,8 @@ public class PlagiarismDetectorFrame extends JFrame {
                     }
                 }
                 startButton.setEnabled(true);
+                cancelButton.setEnabled(false);
+                progressBar.setValue(0);
             }
         }.execute();
     }

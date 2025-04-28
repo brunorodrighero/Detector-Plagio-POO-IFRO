@@ -6,11 +6,13 @@ public class TextInfo {
     private final String fileName;
     private final String filePath;
     private final List<String> nGrams;
+    private final String textHash;
 
-    public TextInfo(String fileName, String filePath, List<String> nGrams) {
+    public TextInfo(String fileName, String filePath, List<String> nGrams, String textHash) {
         this.fileName = fileName;
         this.filePath = filePath;
         this.nGrams = nGrams;
+        this.textHash = textHash;
     }
 
     public String getFileName() {
@@ -23,5 +25,9 @@ public class TextInfo {
 
     public List<String> getNGrams() {
         return nGrams;
+    }
+
+    public String getTextHash() {
+        return textHash;
     }
 }
